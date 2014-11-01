@@ -1,5 +1,6 @@
 /* UDP echo server program -- echo-server-udp.c */
 
+
 #include <stdio.h>      /* standard C i/o facilities */
 #include <stdlib.h>     /* needed for atoi() */
 #include <string.h>     /* needed for strcpy */
@@ -17,15 +18,35 @@ void led(int channel,int density) {
   char file[100];
   char str_density[10];
   
-  printf("file: /sys/class/pwm/gpio_pwm:%d/duty_ns", channel); 
-  printf("density: %d", density);  
+  printf("file: /sys/class/pwm/gpio_pwm:%d/duty_ns\n", channel); 
+  printf("density: %d\n", density);  
 
   sprintf(file, "/sys/class/pwm/gpio_pwm:%d/duty_ns", channel); 
-  sprintf(str_density, "%d00000", density);  
+  sprintf(str_density, "%d0000", density);  
 
   fd = open(file, O_WRONLY);
   write (fd, str_density, strlen(str_density));
   close(fd);
+}
+
+int get_led_duty(int channel) {
+  int fd;
+  int density;
+  char file[100];
+  char str_density[10];
+  
+  printf("file: /sys/class/pwm/gpio_pwm:%d/duty_ns\n", channel); 
+
+  sprintf(file, "/sys/class/pwm/gpio_pwm:%d/duty_ns", channel); 
+
+  fd = open(file, O_RDONLY);
+  read (fd, str_density, 10);
+  close(fd);
+
+  sscanf( str_density, "%3d0000", &density);
+  printf("density: %d\n", density);  
+
+  return density;
 }
 
 /* this routine echos any messages (UDP datagrams) received */
@@ -33,8 +54,12 @@ void led(int channel,int density) {
 void echo( int sd ) {
     int len,n;
     char bufin[MAXBUF];
-    char cmd[10],arg[10];
+    char cmd;
+    char arg[20];
+    char str_val[10];
     struct sockaddr_in remote;
+    int chan,rchan,gchan,bchan;
+    int val,rval,gval,bval;
 
     /* need to know how big address struct is, len must be set before the
        call to recvfrom!!! */
@@ -54,25 +79,47 @@ void echo( int sd ) {
       } else {
         printf("GOT %d BYTES\n",n);
  	
-	strcpy(cmd, "");
 	strcpy(arg, "");
 
-	sscanf( bufin, "%s %s",&cmd, &arg );
-	printf("cmd:%s-arg:%s\n", cmd,arg);
+	sscanf( bufin, "%c%s",&cmd, &arg );
+	printf("cmd:%c-arg:%s\n", cmd,arg);
 
-	if(strcmp(cmd, "red") == 0) {
-		led(7,atoi(arg));
+	if(cmd == 'X') {
+		sscanf( arg, "%3d%3d%3d%3d%3d%3d",&rchan,&gchan,&bchan,&rval,&gval,&bval);
+		printf("rchan: %d rval: %d\n", rchan, rval);
+		printf("gchan: %d gval: %d\n", gchan, gval);
+		printf("bchan: %d bval: %d\n", bchan, bval);
+		led(rchan,rval);
+		led(gchan,gval);
+		led(bchan,bval);
+	}
+	else if(cmd == 'S') {
+		sscanf( arg, "%3d%3d",&chan,&val);
+		printf("chan: %d val: %d\n", chan, val);
+		led(chan,val);
 	}	
-	if(strcmp(cmd, "green") == 0) {
-		led(8,atoi(arg));
-	}	
-	if(strcmp(cmd, "blue") == 0) {
-		led(9,atoi(arg));
-	}	
-	if(strcmp(cmd, "white") == 0) {
-		led(10,atoi(arg));
-	}	
-
+	else if(cmd == 'R') {
+		sscanf( arg, "%3d",&chan);
+		printf("read chan: %03d\n", chan);
+		val = get_led_duty(chan);
+		sprintf(str_val, "%03d\n", val);
+                sendto(sd,str_val,4,0,(struct sockaddr *)&remote,len);
+	}
+	else if(cmd == 'Y') {
+		sscanf( arg, "%3d%3d%3d",&rchan,&gchan,&bchan);
+		printf("read rchan: %03d\n", rchan);
+		printf("read gchan: %03d\n", gchan);
+		printf("read bchan: %03d\n", bchan);
+		rval = get_led_duty(rchan);
+		gval = get_led_duty(gchan);
+		bval = get_led_duty(bchan);
+		printf("read rval: %03d\n", rval);
+		printf("read gval: %03d\n", gval);
+		printf("read bval: %03d\n", bval);
+		printf("%03d%03d%03d\n", rval, gval, bval);
+		sprintf(str_val, "%03d%03d%03d\n", rval, gval, bval);
+                sendto(sd,str_val,10,0,(struct sockaddr *)&remote,len);
+	}
 
         /* Got something, just send it back */
         //sendto(sd,bufin,n,0,(struct sockaddr *)&remote,len);
